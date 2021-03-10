@@ -1,8 +1,23 @@
 # !/usr/bin/python3
 # -*- coding: utf-8 -*-
 """
-PAE Communication
+PAE global configuration parameters
 """
+
+MOTOR_ID_L = 0x01
+MOTOR_ID_R = 0x02
+SENSOR_ID = 100
+
+
+
+
+
+
+
+
+
+
+
 
 fichero_habitacion = "habitacion_003.h"
 OUTPUT_FILE_NAME = "movement.log"

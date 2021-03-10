@@ -8,8 +8,11 @@ import math
 import time
 import logging
 
+from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID
+
 module_logger = logging.getLogger('PAE.sim')
 
+from AX import AX
 
 class Simulator(object):
     WORLD__N_BYTES = 4  # 4 bytes
@@ -45,14 +48,24 @@ class Simulator(object):
         self.world = mundo
         self.logger = logging.getLogger('pae.sim.Sim')
 
-        self.reset_robot_pos()
+        self.AX = {}
+        self.AX[MOTOR_ID_L] = AX()
+        self.AX[MOTOR_ID_R] = AX()
+        self.AX[SENSOR_ID] = AX()
+
+        self.reset_robot()
         
-    def reset_robot_pos(self):
+    def reset_robot(self):
         self.x = self.initial_pos_x
         self.y = self.initial_pos_x
         self.theta = self.initial_theta
 
         self.sim_step = 0
+
+        self.AX[MOTOR_ID_L]._reset()
+        self.AX[MOTOR_ID_R]._reset()
+        self.AX[SENSOR_ID]._reset()
+
         update_sensor_data(robot_pos)
 
     def obstaculo(self):
