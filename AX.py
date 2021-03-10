@@ -7,6 +7,7 @@ AX12 emulator
 from enum import Enum
 from collections import OrderedDict
 
+
 class ax_instruction(Enum):
     IDLE = 0x00
     PING = 0x01
@@ -25,7 +26,7 @@ AX12_memory = {
     0x01: (0x00, "Model Number(H)"),
     0x02: (0x01, "Firmware Version"),
     0x03: (0, "ID",),
-    0x04: (0x01,"Baud Rate",),
+    0x04: (0x01, "Baud Rate",),
     0x05: (0xFA, "Return Delay Time",),
     0x06: (0, "CW Angle Limit(L)",),
     0x07: (0, "CW Angle Limit(H)",),
@@ -34,7 +35,7 @@ AX12_memory = {
     0x0A: (0, "Reserved",),
     0x0B: (0x55, "High Temp. Limit",),
     0x0C: (0x3C, "Low Voltage Limit",),
-    0x0D: (0xBE,"High Voltage Limit",),
+    0x0D: (0xBE, "High Voltage Limit",),
     0x0E: (0xFF, "Max Torque(L)",),
     0x0F: (0x03, "Max Torque(H)",),
     0x10: (0x02, "Status Return Level",),
@@ -72,6 +73,7 @@ AX12_memory = {
     0x30: (0, "Punch(L)",),
     0x31: (0, "Punch(H)"),
 }
+
 
 class AX(OrderedDict):
     def __init__(self):
