@@ -8,11 +8,12 @@ import math
 import time
 import logging
 
-from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID
+from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID, OUTPUT_FILE_NAME
 
 module_logger = logging.getLogger('PAE.sim')
 
-from AX import AX
+from AX import AX, AX_registers
+
 
 class Simulator(object):
     WORLD__N_BYTES = 4  # 4 bytes
@@ -27,73 +28,140 @@ class Simulator(object):
     DELTA_T = SIM_STEP_MS_TIME / 1000.0  # convertimos el paso de la simul a s
     CNTS_2_MM = 1000.0 * DELTA_T / 1023  # conversion del valor de velocidad del AX12 [0..3FF] a mm/s
     L_AXIS = 1.0
-    t_last_upd = 0.0
     INITIAL_POS_X = 50
     INITIAL_POS_Y = 350
     INITIAL_POS_THETA = math.pi / 2
     ORIENT_L = 1  # Orientacion motor izquierdo
     ORIENT_R = -1  # Orientacion motor derecho
-    # V_inicial_demo_L = 0x3FF
-    # V_inicial_demo_R = 0x7FF
-    V_inicial_demo_L = 0
-    V_inicial_demo_R = 0
 
-    def __init__(self, initial_pos_x, initial_pos_y, initial_theta, mundo):
+    def __init__(self, initial_pos_x, initial_pos_y, initial_theta, mundo, socket_conn,
+                 log_data = True,
+                 motor_id_l=MOTOR_ID_L, motor_id_r=MOTOR_ID_R, sensor_id=SENSOR_ID,
+                 ):
+
+        # Initial values for position and orientation
         self.initial_pos_x = initial_pos_x
         self.initial_pos_y = initial_pos_y
         self.initial_theta = initial_theta
-        self.x = initial_pos_x
-        self.y = initial_pos_y
 
+        # World used for the simulation
         self.world = mundo
+
+        # TODO: Find world size
+        self.max_y =
+        self.max_x =
+
+        self.log_data = log_data
+        self.log = None
+
+        self.socket_conn = socket_conn
+        # Starting logger
         self.logger = logging.getLogger('pae.sim.Sim')
 
-        self.AX = {}
-        self.AX[MOTOR_ID_L] = AX()
-        self.AX[MOTOR_ID_R] = AX()
-        self.AX[SENSOR_ID] = AX()
+        # Sensor and motors IDs
+        self.motor_id_l = motor_id_l
+        self.motor_id_r = motor_id_r
+        self.sensor_id = sensor_id
+
+        # AX12 motors, left and right
+        self.AX12 = {self.motor_id_l: AX(self.motor_id_l),
+                   self.motor_id_r: AX(self.motor_id_r),}
+        # AXS1 sensor modules
+        self.AXS1 = AX(self.sensor_id)
+
+        # Not required, only declaring in init
+        # Position integer
+        self.x = self.y = 0
+        # Orientation double
+        self.theta = 0.0
+        self.sim_step = 0
+        # Integer velocities, left and right motor
+        self.iv_l = self.iv_r = 0
+        # Sensor distances
+        self.distance_center = self.distance_right = self.distance_left = 0
+        # Double velocities, left and right motor
+        self.v_l = self.v_r = 0.0
+        # Double position,
+        self.x_p = self.y_p = 0.0
+        # Radius of turn
+        self.r = 0.0
+        # Angular velocity
+        self.w = 0.0
+        # Instantaneous center of curvature point, double
+        self.icc_x = self.icc_y = 0.0
+
+        # Last time updated simulation values
+        self.t_last_upd = 0
+
+        self.simulator_running = 1
 
         self.reset_robot()
-        
+
+    def enable_data_logging(self):
+        self.log = open(OUTPUT_FILE_NAME, 'a')
+        self.log_data = True
+
+    def disable_data_logging(self):
+        if self.log is not None:
+            self.log.close()
+            self.log = None
+        self.log_data = False
+
     def reset_robot(self):
+        """ Reset the simulation status
+
+        :return:
+        """
         self.x = self.initial_pos_x
         self.y = self.initial_pos_x
         self.theta = self.initial_theta
 
         self.sim_step = 0
 
-        self.AX[MOTOR_ID_L]._reset()
-        self.AX[MOTOR_ID_R]._reset()
-        self.AX[SENSOR_ID]._reset()
+        self.AX12[self.motor_id_l].reset()
+        self.AX12[self.motor_id_r].reset()
+        self.AXS1.reset()
 
-        update_sensor_data(robot_pos)
+        self.simulator_running = 1
 
-    def obstaculo(self):
-        # Parametros: uint16_t x, uint16_t y, const uint32_t *mundo
-        mundo = self.world
-        # Los datos se han cargado como un array[4096, 128] => [y, x]
-        # y es la fila [0..4095]
-        # x es la columna: bit n de 0..31, dentro de uno de los 0..127 bloques de una fila
-        # En que bloque se encuentra x?
-        p_offset = self.x >> self.WORLD__MAX_2POW  # INT(x/32)
-        p_bit = (self.WORLD__N_BITS - 1) - (self.x - (p_offset << self.WORLD__MAX_2POW))
+        self.update_sensor_data()
 
-        if mundo[self.y, p_offset] & (1 << p_bit):
+    def obstaculo(self, x, y):
+        """ Return True if there is a obstacle in (x,y)
+
+        Los datos se han cargado como un array[4096, 128] => [y, x]
+        y es la fila [0..4095]
+        x es la columna: bit n de 0..31, dentro de uno de los 0..127 bloques de una fila
+        En que bloque se encuentra x?
+
+        :return:
+        """
+
+        p_offset = x >> self.WORLD__MAX_2POW  # INT(x/32)
+        p_bit = (self.WORLD__N_BITS - 1) - (x - (p_offset << self.WORLD__MAX_2POW))
+
+        if self.world[y, p_offset] & (1 << p_bit):
             return True
         return False
 
-    def sensor_distance(self, x0, y0, theta):
+    def sensor_distance(self, theta):
+        """ Distance to an obstacle.
+
+        255 is the maximum value
+
+        :param theta: Angle component to use for obstacle detection
+        :return:
+        """
         modulo = 0.0  # modulo del vector de desplazamiento en la direccion de un sensor
         x = 0.0
         y = 0.0  # componentes del vector de desplazamiento en la direccion de un sensor
         indice = 0  # Distancia al obstaculo
-        u8_mod = 0  # modulo redondeado, a 8 bits
 
         # incrementos del vector de desplazamiento en la direccion de un sensor:
         dx = math.cos(theta)
         dy = math.sin(theta)
 
-        while (modulo < 255) and not (self.obstaculo(round(x0 + x), round(y0 + y))):
+        while (modulo < 255) and not (self.obstaculo(round(self.x + x), round(self.y + y))):
             x += dx
             y += dy
             modulo = math.sqrt(x * x + y * y)
@@ -114,24 +182,23 @@ class Simulator(object):
         # theta_l = 0.0; theta_r = 0.0 #Orientacion de los sensores izquierdo y derecho
 
         # Angulos en sentido trigonometrico correcto:
-        self.theta_r = self.theta - math.pi / 2
-        self.theta_l = self.theta + math.pi / 2
+        theta_r = self.theta - math.pi / 2
+        theta_l = self.theta + math.pi / 2
 
         # Sensor central:
-        centro = self.sensor_distance(self.x, self.y, self.theta)
+        self.distance_center = self.sensor_distance(self.theta)
 
         # Sensor izquierda:
-        izq = self.sensor_distance(self.x, self.y, self.theta_l)
+        self.distance_left = self.sensor_distance(theta_l)
 
         # Sensor derecha
-        der = self.sensor_distance(self.x, self.y, self.theta_r)
+        self.distance_right = self.sensor_distance(theta_r)
 
-        return izq, centro, der
 
-    def elapsed_time(self, t1, milliseconds):
+    def elapsed_time(self, milliseconds):
         # Parametros: clock_t t1, uint32_t miliseconds, int32_t *true_elapsed_time
         t2 = time.time()
-        true_elapsed_time = (t2 - t1) * 1000  # para tenerlo en ms
+        true_elapsed_time = (t2 - self.t_last_upd) * 1000  # para tenerlo en ms
         if true_elapsed_time > milliseconds:
             return True, true_elapsed_time
         else:
@@ -140,7 +207,7 @@ class Simulator(object):
     def check_colision(self):
         if self.obstaculo():
             self.logger.error("***** COLLISION DETECTED AT", self.x, self.y, "simulator step",
-                                self.sim_step, "\n")
+                              self.sim_step, "\n")
             return True
         return False
 
@@ -148,11 +215,10 @@ class Simulator(object):
         """Verify we are not getting outside of the room
 
         """
-        if self.x > self.ANCHO - 1 or self.y > self.ALTO - 1 or self.x < 0 or self.y < 0:
+        if self.x > self.max_x - 1 or self.y > self.max_y - 1 or self.x < 0 or self.y < 0:
             self.logger.warning("***** LEAVING ROOM... STOPPING SIMULATOR\n")
             return True
         return False
-
 
     def check_simulation_end(self):
         if self.MAX_SIM_STEPS != 0 and self.sim_step >= self.MAX_SIM_STEPS:
@@ -163,147 +229,104 @@ class Simulator(object):
     def end_simulator(self):
         return
 
-    # ** Reads from the dynamixel memory the speed of a endless turning wheel
-    #  *
-    #  * @param v Pointer were the signed speed is stored
-    #  * @param motor_id ID of the Dynamixel module
-    #  */
-    def _speed_dyn_2_speed_int(motor_id):
-        # Parametros: int16_t *v, uint8_t motor_id
-        v = AX12[motor_id - 1][DYN_REG__GOAL_SPEED_L]
-        v |= ((AX12[motor_id - 1][DYN_REG__GOAL_SPEED_H] & 0x03) << 8)
-        if AX12[motor_id - 1][DYN_REG__GOAL_SPEED_H] & 0x04:
+    def _speed_dyn_2_speed_int(self, motor_id):
+        """ Reads from the dynamixel memory the speed of a endless turning wheel
+
+        :param motor_id: ID of the Dynamixel module
+        :return:
+        """
+        v = self.AX12[motor_id][AX_registers.GOAL_SPEED_L]
+        v |= ((self.AX12[motor_id][AX_registers.GOAL_SPEED_H] & 0x03) << 8)
+        if self.AX12[motor_id][AX_registers.GOAL_SPEED_H.value] & 0x04:
             v *= -1
         return v
 
-    # /** Read the speed of the dynamixel modules and store them inside the position structure
-    def read_speed():
-        robot_pos_str.iv_l = _speed_dyn_2_speed_int(ID_L) * ORIENT_L
-        robot_pos_str.iv_r = _speed_dyn_2_speed_int(ID_R) * ORIENT_R
-        return
+    def read_speed(self):
+        """ Read the speed of the dynamixel modules and update the position
 
-    # /** Update the position and orientation of the robot using two wheel differential drive kinematics
-    def calculate_new_position():
-        # // http://www.cs.columbia.edu/~allen/F15/NOTES/icckinematics.pdf
-        read_speed()
-        robot_pos_str.v_l = CNTS_2_MM * robot_pos_str.iv_l
-        robot_pos_str.v_r = CNTS_2_MM * robot_pos_str.iv_r
+        :return:
+        """
+        self.iv_l = self._speed_dyn_2_speed_int(self.motor_id_l) * self.ORIENT_L
+        self.iv_r = self._speed_dyn_2_speed_int(self.motor_id_r) * self.ORIENT_R
 
-        if robot_pos_str.iv_l == robot_pos_str.iv_r:
-            robot_pos_str.x_p += robot_pos_str.v_l * DELTA_T * math.cos(robot_pos_str.theta)
-            robot_pos_str.y_p += robot_pos_str.v_r * DELTA_T * math.sin(robot_pos_str.theta)
+    def calculate_new_position(self):
+        """ Update the position and orientation of the robot using two wheel differential drive kinematics
+
+        http://www.cs.columbia.edu/~allen/F15/NOTES/icckinematics.pdf
+        :return:
+        """
+
+        self.read_speed()
+        self.v_l = self.CNTS_2_MM * self.iv_l
+        self.v_r = self.CNTS_2_MM * self.iv_r
+
+        if self.iv_l == self.iv_r:
+            self.x_p += self.v_l * self.DELTA_T * math.cos(self.theta)
+            self.y_p += self.v_r * self.DELTA_T * math.sin(self.theta)
         else:
-            robot_pos_str.r = (L_AXIS / 2) * (robot_pos_str.v_l + robot_pos_str.v_r) \
-                              / (robot_pos_str.v_r - robot_pos_str.v_l)
-            robot_pos_str.w = (robot_pos_str.v_r - robot_pos_str.v_l) / L_AXIS
-            robot_pos_str.icc_x = robot_pos_str.x_p \
-                                  - robot_pos_str.r * math.sin(robot_pos_str.theta)
-            robot_pos_str.icc_y = robot_pos_str.y_p \
-                                  + robot_pos_str.r * math.cos(robot_pos_str.theta)
-            robot_pos_str.x_p = math.cos(robot_pos_str.w * DELTA_T) * (robot_pos_str.x_p - robot_pos_str.icc_x) \
-                                - math.sin(robot_pos_str.w * DELTA_T) * (robot_pos_str.y_p - robot_pos_str.icc_y) \
-                                + robot_pos_str.icc_x
-            robot_pos_str.y_p = math.sin(robot_pos_str.w * DELTA_T) * (robot_pos_str.x_p - robot_pos_str.icc_x) \
-                                + math.cos(robot_pos_str.w * DELTA_T) * (robot_pos_str.y_p - robot_pos_str.icc_y) \
-                                + robot_pos_str.icc_y
+            self.r = (self.L_AXIS / 2) * (self.v_l + self.v_r) \
+                     / (self.v_r - self.v_l)
+            self.w = (self.v_r - self.v_l) / self.L_AXIS
+            self.icc_x = self.x_p - self.r * math.sin(self.theta)
+            self.icc_y = self.y_p + self.r * math.cos(self.theta)
+            self.x_p = math.cos(self.w * self.DELTA_T) * (self.x_p - self.icc_x) \
+                       - math.sin(self.w * self.DELTA_T) * (self.y_p - self.icc_y) \
+                       + self.icc_x
+            self.y_p = math.sin(self.w * self.DELTA_T) * (self.x_p - self.icc_x) \
+                       + math.cos(self.w * self.DELTA_T) * (self.y_p - self.icc_y) \
+                       + self.icc_y
 
-            robot_pos_str.theta += robot_pos_str.w * DELTA_T
-            if robot_pos_str.theta < -math.pi:
-                robot_pos_str.theta += 2 * math.pi
-            elif robot_pos_str.theta > math.pi:
-                robot_pos_str.theta -= 2 * math.pi
-        robot_pos_str.x = round(robot_pos_str.x_p)
-        robot_pos_str.y = round(robot_pos_str.y_p)
+            self.theta += self.w * self.DELTA_T
+            if self.theta < -math.pi:
+                self.theta += 2 * math.pi
+            elif self.theta > math.pi:
+                self.theta -= 2 * math.pi
+        self.x = round(self.x_p)
+        self.y = round(self.y_p)
 
         # if SIMUL_Save:
-        #     fichero_log.write("%.2f, %.2f, %.3f, %.2f, %.2f\n" %(robot_pos_str.x_p, robot_pos_str.y_p,
-        #         robot_pos_str.theta, robot_pos_str.v_l, robot_pos_str.v_r))
-        return
+        #     fichero_log.write("%.2f, %.2f, %.3f, %.2f, %.2f\n" %(self.x_p, self.y_p,
+        #         self.theta, self.v_l, self.v_r))
 
-    # /** Update the sensor data taking into account the new position
-    def update_sensor_data(robot_pos):
-        distancia_left, distancia_center, distancia_right = distance(robot_pos)
+    def update_sensor_data(self):
+        """ Update the sensor data taking into account the new position
+
+        :return:
+        """
+        self.distance()
         # Actualizamos la memoria de los modulos: (duplicando los sensores de un modulo al otro)
-        AX12[0][DYN_REG__IR_LEFT] = distancia_left  # Left IR
-        AX12[0][DYN_REG__CENTER_IR_SENSOR] = distancia_center  # Center IR
-        AX12[0][DYN_REG__IR_RIGHT] = distancia_right  # Right IR
-        AX12[1][DYN_REG__IR_LEFT] = distancia_left  # Left IR
-        AX12[1][DYN_REG__CENTER_IR_SENSOR] = distancia_center  # Center IR
-        AX12[1][DYN_REG__IR_RIGHT] = distancia_right  # Right IR
-        return
+        self.AXS1[AX_registers.IR_LEFT] = self.distance_left  # Left IR
+        self.AXS1[AX_registers.IR_CENTER] = self.distance_center  # Center IR
+        self.AXS1[AX_registers.IR_RIGHT] = self.distance_right  # Right IR
 
-    def calcular_distancias_demo():
-        # Demo, moviendo las barras con distancias ficticias
-        distancia_left = AX12[0][DYN_REG__IR_LEFT]
-        distancia_right = AX12[0][DYN_REG__IR_RIGHT]
-        distancia_center = AX12[0][DYN_REG__CENTER_IR_SENSOR]
-        creciendo = AX12[0][0x1D]
-        # Sensor izquierdo:
-        if distancia_left < 1:
-            distancia_left = 256
-        distancia_left -= 1
-        # sensor derecho:
-        if distancia_right > 255:
-            distancia_right = 0
-        distancia_right += 1
-        # Sensor centro:
-        if creciendo:
-            if distancia_center < 255:
-                distancia_center += 1
-            else:
-                creciendo = 0
-        else:
-            if distancia_center > 0:
-                distancia_center -= 1
-            else:
-                creciendo = 1
-        AX12[0][0x1D] = creciendo
-        # Actualizamos la memoria de los modulos: (duplicando los sensores de un modulo al otro)
-        AX12[0][DYN_REG__IR_LEFT] = distancia_left  # Left IR
-        AX12[0][DYN_REG__CENTER_IR_SENSOR] = distancia_center  # Center IR
-        AX12[0][DYN_REG__IR_RIGHT] = distancia_right  # Right IR
-        AX12[1][DYN_REG__IR_LEFT] = distancia_left  # Left IR
-        AX12[1][DYN_REG__CENTER_IR_SENSOR] = distancia_center  # Center IR
-        AX12[1][DYN_REG__IR_RIGHT] = distancia_right  # Right IR
-        # fin de la demo
 
-    # /** Update, if required, the position and sensor information
-    def update_movement_simulator_values():
-        global t_last_upd, simulando, fichero_log
-        objective_delay = SIM_STEP_MS_TIME
-        elapsed, true_elapsed_time = elapsed_time(t_last_upd, objective_delay)
-        if DEMO:
-            calcular_distancias_demo()
-            return False  # False pq no hay que actualizar nada desde el hilo
+    def update_movement_simulator_values(self):
+        """ Update, if required, the position and sensor information
+
+        :return:
+        """
+        #while True
+        objective_delay = self.SIM_STEP_MS_TIME
+        elapsed, true_elapsed_time = self.elapsed_time(objective_delay)
         if elapsed:
-            objective_delay -= (true_elapsed_time - SIM_STEP_MS_TIME)
-            t_last_upd = time.time()
-            robot_pos_str.sim_step += 1
-            if MAX_SIM_STEPS != 0 and robot_pos_str.sim_step >= MAX_SIM_STEPS:
-                print("***** SIMULATION END REACHED. STOPPING SIMULATOR\n")
-                simulando = 0
+            objective_delay -= (true_elapsed_time - self.SIM_STEP_MS_TIME)
+            self.t_last_upd = time.time()
+            self.sim_step += 1
+            if self.MAX_SIM_STEPS != 0 and self.sim_step >= self.MAX_SIM_STEPS:
+                self.logger.warning("***** SIMULATION END REACHED. STOPPING SIMULATOR\n")
+                self.simulator_running = 0
                 return False  # False pq ya no conviene actualizar nada desde el hilo
-            calculate_new_position()
-            if not check_out_of_bounds(habitacion.ancho, habitacion.alto):
-                update_sensor_data(robot_pos_str)
-                if check_colision(robot_pos_str):
+            self.calculate_new_position()
+            if not self.check_out_of_bounds():
+                self.update_sensor_data()
+                if self.check_colision():
                     return False  # False pq no conviene actualizar nada desde el hilo
                 # Mandamos las nuevas coordenadas al socket de la ventana grafica:
-                conn.send("%.2f, %.2f\n" % (robot_pos_str.x_p, robot_pos_str.y_p))
+                self.socket_conn.send("%.2f, %.2f\n" % (self.x_p, self.y_p))
                 # Si esta activada la grabacion, escribimos los datos al fichero de salida:
-                if SIMUL_Save:
-                    # lock = open(fichero_lock, "w")
-                    with open(OUTPUT_FILE_NAME, "a") as fichero_log:
-                        fichero_log.write("%.2f, %.2f, %.3f, %.2f, %.2f\n" % (robot_pos_str.x_p, robot_pos_str.y_p,
-                                                                              robot_pos_str.theta, robot_pos_str.v_l,
-                                                                              robot_pos_str.v_r))
-                    # lock.close()
-                    # os.remove(fichero_lock)
-                return True  # True pq hay que actualizar mas cosas desde el hilo
-        # #if DEBUG_LEVEL > 2
-        #         check_simulation_end();
-        # #endif
-        #     }
-        # }
-        return False  # False pq no hay que actualizar nada desde el hilo
+                if self.log_data:
+                    self.log.write("%.2f, %.2f, %.3f, %.2f, %.2f\n" % (self.x_p, self.y_p,
+                                                                              self.theta, self.v_l,
+                                                                              self.v_r))
+        yield
 
