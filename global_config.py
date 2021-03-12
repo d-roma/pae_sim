@@ -20,6 +20,10 @@ INITIAL_POS_X = 50
 INITIAL_POS_Y = 350
 INITIAL_POS_THETA = math.pi / 2
 
+#Simulator update parameters
+SIM_STEP_MS_TIME = 50  # en ms
+MAX_SIM_STEPS = 24000
+
 # Socket to graphical app
 SOCKET_IP = 'localhost'
 SOCKET_PORT = 6000
@@ -30,13 +34,7 @@ OUTPUT_FILE_NAME = "movement.log"
 
 Comando_plot = "python plot_movement.py"
 
-DEMO = 0
-DEBUG_LEVEL = 3
+DEFAULT_COM_PORT = 'COM5'
+DEFAULT_BAUD_RATE = 115200
+SERIAL_TIMEOUT = 0.002  # para lectura puerto, en s
 
-Default_port_com = 'COM5'
-port_com = Default_port_com
-baud_rate = 115200
-baud_rates = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1000000]
-timeout = 0.002  # para lectura puerto, en s
-lectura = 0
-seguir = 1

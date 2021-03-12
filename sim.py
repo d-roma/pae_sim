@@ -10,19 +10,15 @@ import logging
 from multiprocessing.connection import Client
 
 from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID, OUTPUT_FILE_NAME, INITIAL_POS_X, INITIAL_POS_Y, \
-    INITIAL_POS_THETA, WORLD__N_BITS, WORLD__MAX_2POW, SOCKET_IP, SOCKET_PORT
-
-module_logger = logging.getLogger('PAE.sim')
+    INITIAL_POS_THETA, WORLD__N_BITS, WORLD__MAX_2POW, SOCKET_IP, SOCKET_PORT, SIM_STEP_MS_TIME, MAX_SIM_STEPS
 
 from AX import AX, AX_registers
 
 
+module_logger = logging.getLogger('PAE.sim')
+
+
 class Simulator(object):
-    # Las unidades de distancia se consideran en mm
-    SIM_STEP_MS_TIME = 50  # en ms
-    MAX_SIM_STEPS = 24000
-    delay_Simul = 0.090  # en s
-    delay_Puerto = 0.001  # en s
     DELTA_T = SIM_STEP_MS_TIME / 1000.0  # convertimos el paso de la simul a s
     CNTS_2_MM = 1000.0 * DELTA_T / 1023  # conversion del valor de velocidad del AX12 [0..3FF] a mm/s
     L_AXIS = 1.0
@@ -96,9 +92,12 @@ class Simulator(object):
         # Last time updated simulation values
         self.t_last_upd = 0
 
-        self.simulator_running = 1
+        self.running = 1
 
         self.reset_robot()
+
+    def stop(self):
+        self.running = 0
 
     def enable_data_logging(self):
         self.log = open(OUTPUT_FILE_NAME, 'a')
@@ -142,7 +141,7 @@ class Simulator(object):
         self.AX12[self.motor_id_r].reset()
         self.AXS1.reset()
 
-        self.simulator_running = 1
+        self.running = 1
 
         self.update_sensor_data()
 
@@ -225,7 +224,8 @@ class Simulator(object):
 
     def check_colision(self):
         if self.obstaculo(self.x, self.y):
-            self.logger.error("***** COLLISION DETECTED AT (%d, %d) simulator step: %d \n" % (self.x, self.y, self.sim_step))
+            self.logger.error(
+                "***** COLLISION DETECTED AT (%d, %d) simulator step: %d \n" % (self.x, self.y, self.sim_step))
             return True
         return False
 
@@ -323,15 +323,15 @@ class Simulator(object):
         :return:
         """
         # while True
-        objective_delay = self.SIM_STEP_MS_TIME
+        objective_delay = SIM_STEP_MS_TIME
         elapsed, true_elapsed_time = self.elapsed_time(objective_delay)
         if elapsed:
-            objective_delay -= (true_elapsed_time - self.SIM_STEP_MS_TIME)
+            objective_delay -= (true_elapsed_time - SIM_STEP_MS_TIME)
             self.t_last_upd = time.time()
             self.sim_step += 1
-            if self.MAX_SIM_STEPS != 0 and self.sim_step >= self.MAX_SIM_STEPS:
+            if MAX_SIM_STEPS != 0 and self.sim_step >= MAX_SIM_STEPS:
                 self.logger.warning("***** SIMULATION END REACHED. STOPPING SIMULATOR\n")
-                self.simulator_running = 0
+                self.running = 0
                 return False  # False pq ya no conviene actualizar nada desde el hilo
             self.calculate_new_position()
             if not self.check_out_of_bounds():
