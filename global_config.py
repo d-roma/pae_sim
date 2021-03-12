@@ -4,19 +4,25 @@
 PAE global configuration parameters
 """
 
+import math
+
 MOTOR_ID_L = 0x01
 MOTOR_ID_R = 0x02
 SENSOR_ID = 100
 
+# Funciones y definiciones para la simulacion del movimiento
+WORLD__N_BYTES = 4  # 4 bytes
+WORLD__N_BITS = 32  # 32 bits
+WORLD__MAX_2POW = int(math.log2(WORLD__N_BYTES * 8))
 
+#Simulator initial positions
+INITIAL_POS_X = 50
+INITIAL_POS_Y = 350
+INITIAL_POS_THETA = math.pi / 2
 
-
-
-
-
-
-
-
+# Socket to graphical app
+SOCKET_IP = 'localhost'
+SOCKET_PORT = 6000
 
 
 fichero_habitacion = "habitacion_003.h"

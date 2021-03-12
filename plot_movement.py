@@ -11,6 +11,8 @@ import time
 import os.path
 from multiprocessing.connection import Listener
 
+from global_config import SOCKET_IP, SOCKET_PORT
+
 seguir = 1
 total_puntos = 0
 fichero_habitacion = "habitacion_003.h"
@@ -185,8 +187,8 @@ lectura = 1
 # print(sys.stdin.readline())  # Prueba de comunicacion con el pipe
 
 # Intentamos abrir el socket para recibir datos de la aplicacion madre
-address = ('localhost', 6000)     # family is deduced to be 'AF_INET'
-listener = Listener(address, authkey=b'secret password')
+address = (SOCKET_IP, SOCKET_PORT)     # family is deduced to be 'AF_INET'
+listener = Listener(address)
 conn = listener.accept()
 print('connection accepted from', listener.last_accepted)
 print(conn.recv())

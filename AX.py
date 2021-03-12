@@ -130,7 +130,7 @@ AX12_reset_memory = {
 class AX(OrderedDict):
     def __init__(self, id):
         self.id = id
-        self._reset()
+        self.reset()
 
     def reset(self):
         for key, value in AX12_reset_memory.items():
