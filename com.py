@@ -17,6 +17,7 @@ BAUD_RATES = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600, 1000000
 # crea una trama d'status per indicar que no hi ha error
 Status_NoError = [0xff, 0xff, 0x01, 0x02, 0x00, 0xfc]
 
+
 def lista_puertos_serie():
     lista_puertos = []
     puertos = serial.tools.list_ports.comports()
@@ -25,6 +26,7 @@ def lista_puertos_serie():
     lista_puertos.append('None')
     lista_puertos.sort()
     return lista_puertos
+
 
 class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
     delay_Puerto = 0.001  # en s
@@ -40,64 +42,80 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
         threading.Thread.__init__(self)
         self.tk_app = tk_app
         self.simulador = simulador
-        self.serial = None
+        self.serial = serial.Serial()
 
         self.instruccio = self.INSTR_IDLE
         self.AX12_moving_L = "PARAT"
         self.AX12_moving_R = "PARAT"
 
+        self.ID = None
+
+    def open(self, com_port, baud_rate):
+        if self.serial.is_open:
+            self.serial.close()
+        self.serial.port = com_port
+        self.serial.baudrate = baud_rate
+        self.serial.timeout = SERIAL_TIMEOUT
+        try:
+            self.serial.open()
+        except serial.SerialException:
+            raise IOError("Error opening port")
+
     def f_angle_limit(self):
-        cw_angle = self.simulador.AX12[ID][AX_registers.CW_ANGLE_LIMIT_L] + (self.simulador.AX12[ID][AX_registers.CW_ANGLE_LIMIT_H] & 0x03) << 8
-        ccw_angle = self.simulador.AX12[ID][AX_registers.CCW_ANGLE_LIMIT_L] + (self.simulador.AX12[ID][AX_registers.CCW_ANGLE_LIMIT_H] & 0x03) << 8
+        cw_angle = self.simulador.AX12[self.ID][AX_registers.CW_ANGLE_LIMIT_L] + (
+                    self.simulador.AX12[self.ID][AX_registers.CW_ANGLE_LIMIT_H] & 0x03) << 8
+        ccw_angle = self.simulador.AX12[self.ID][AX_registers.CCW_ANGLE_LIMIT_L] + (
+                    self.simulador.AX12[self.ID][AX_registers.CCW_ANGLE_LIMIT_H] & 0x03) << 8
         if self.tk_app.DEBUG_Consola == 1:
             if cw_angle == 0:
-                print("Motor", ID, "gir continu en sentit horari")
+                print("Motor", self.ID, "gir continu en sentit horari")
             else:
-                print("Motor", ID, "angle limit en sentit horari:", cw_angle)
+                print("Motor", self.ID, "angle limit en sentit horari:", cw_angle)
             if ccw_angle == 0:
-                print("Motor", ID, "gir continu en sentit anti-horari")
+                print("Motor", self.ID, "gir continu en sentit anti-horari")
             else:
-                print("Motor", ID, "angle limit en sentit anti-horari:", ccw_angle)
+                print("Motor", self.ID, "angle limit en sentit anti-horari:", ccw_angle)
         return
 
     def f_led(self):
         if self.tk_app.DEBUG_Consola == 1:
-            if self.simulador.AX12[ID][AX_registers.LED] == 1:
-                print("LED motor", ID, "ON")
+            if self.simulador.AX12[self.ID][AX_registers.LED] == 1:
+                print("LED motor", self.ID, "ON")
             else:
-                print("LED motor", ID, "OFF")
-        if ID == 1:
-            self.tk_app.Led_motor_left.set(self.simulador.AX12[ID][AX_registers.LED])
+                print("LED motor", self.ID, "OFF")
+        if self.ID == 1:
+            self.tk_app.Led_motor_left.set(self.simulador.AX12[self.ID][AX_registers.LED])
         else:
-            self.tk_app.Led_motor_right.set(self.simulador.AX12[ID][AX_registers.LED])
+            self.tk_app.Led_motor_right.set(self.simulador.AX12[self.ID][AX_registers.LED])
         return
 
     def f_moving_speed(self):
-        velocitat = self.simulador.AX12[ID][AX_registers.GOAL_SPEED_L] + (self.simulador.AX12[ID][AX_registers.GOAL_SPEED_H] & 0x03) << 8
+        velocitat = self.simulador.AX12[self.ID][AX_registers.GOAL_SPEED_L] + (
+                    self.simulador.AX12[self.ID][AX_registers.GOAL_SPEED_H] & 0x03) << 8
         if self.tk_app.DEBUG_Consola == 1:
-            print("Velocitat  motor", ID, "=", velocitat)
+            print("Velocitat  motor", self.ID, "=", velocitat)
         text_motor = "v=" + str(velocitat)
-        sentit = self.simulador.AX12[ID][AX_registers.GOAL_SPEED_H] & 0x04
+        sentit = self.simulador.AX12[self.ID][AX_registers.GOAL_SPEED_H] & 0x04
         if sentit == 0:
             if self.tk_app.DEBUG_Consola == 1:
-                print("Sentit gir motor", ID, "= CCW")
-            if ID == 1:
+                print("Sentit gir motor", self.ID, "= CCW")
+            if self.ID == 1:
                 self.AX12_moving_L = text_motor + " CCW"
             else:
                 self.AX12_moving_R = text_motor + " CCW"
         else:
             if self.tk_app.DEBUG_Consola == 1:
-                print("Sentit gir motor", ID, "= CW")
-            if ID == 1:
+                print("Sentit gir motor", self.ID, "= CW")
+            if self.ID == 1:
                 self.AX12_moving_L = text_motor + " CW"
             else:
                 self.AX12_moving_R = text_motor + " CW"
         return
 
     def f_ADC_value(self):
-        ADC_val = self.simulador.AX12[ID][AX_registers.ADC_VALUE]
+        ADC_val = self.simulador.AX12[self.ID][AX_registers.ADC_VALUE]
         if self.tk_app.DEBUG_Consola == 1:
-            print("Mesura del ADC", ID, ":", ADC_val)
+            print("Mesura del ADC", self.ID, ":", ADC_val)
         return
 
     def AX12_func(self, argument):
@@ -189,7 +207,7 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
                 print("Command:", AX12_reset_memory[AX_registers(comandament)][1])
         return error_de_instr
 
-     # comprova si hi ha error de checksum a la trama
+    # comprova si hi ha error de checksum a la trama
     @staticmethod
     def comprova_checksum(frame, debug):
         len_trama = len(frame)
@@ -241,19 +259,18 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
             print("status packet in dec:", status_frame)
         self.serial.write(status_frame)
 
-
-    def generate_status_packet(self, id_modul, instruc, code_error, trama):
+    def generate_status_packet(self, instruc, code_error, trama):
         if instruc != 2:
-            self.send_status_packet(id_modul, code_error)
+            self.send_status_packet(self.ID, code_error)
         elif instruc == AX_instruction.READ.value:
             address = trama[5]
             num_param = trama[6]
-            self.generate_read_packet(id_modul, address, num_param)
+            self.generate_read_packet(self.ID, address, num_param)
 
-    def actualitza_AX_Memory(self, id_modul, adressa, nparametres, trama):
+    def actualitza_AX_Memory(self, adressa, nparametres, trama):
         # TODO Move to sim?
         for index in range(nparametres):
-            self.simulador.AX12[id_modul][AX_registers((adressa + index))] = trama[index + 6]
+            self.simulador.AX12[self.ID][AX_registers((adressa + index))] = trama[index + 6]
         return
 
     def print_AX_MemoryMap(self):
@@ -274,10 +291,11 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
 
         if self.tk_app.DEBUG_Consola == 1:
             print("----------- ESTAT DEL ROBOT -----------------------")
-        v_left = self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] + (self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] & 0x03) << 8
+        v_left = self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] + (
+                    self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] & 0x03) << 8
         sentit_left = self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] & 0x04
         v_right = self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] + (
-                    self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] & 0x03) << 8
+                self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] & 0x03) << 8
         sentit_right = self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] & 0x04
         if (v_left == 0) & (v_right == 0):
             if self.tk_app.DEBUG_Consola == 1:
@@ -348,10 +366,10 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
                         chk_sum_error = self.comprova_checksum(trama[0:trama[3] + 4], self.tk_app.DEBUG_trama)
                         # error indicara si hi ha un error, sigui d'instruccio o de checksum
                         error = (chk_sum_error | instr_error)
-                        ID = trama[2]  # posicio a la trama del identificador edl modul
-                        if ID != 0xFE:  # si el ID no es el de broadcast respon amb un status packet
+                        self.ID = trama[2]  # posicio a la trama del identificador edl modul
+                        if self.ID != 0xFE:  # si el ID no es el de broadcast respon amb un status packet
                             # send_status_packet(ID, instruccio, error, trama)
-                            self.generate_status_packet(ID, instruccio, error, trama)
+                            self.generate_status_packet(instruccio, error, trama)
                         else:
                             print("Broadcasting ID Instruction Packet")
                         if error == 0:  # si no hi ha hagut cap error analitza la instruccio i l'executa
@@ -359,7 +377,7 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
                                 n_parametres = trama[3] - 3
                                 # posicio de la tama on esta l'adreça de memoria del modul a escriure
                                 address = trama[5]
-                                self.actualitza_AX_Memory(ID, address, n_parametres,trama)
+                                self.actualitza_AX_Memory(address, n_parametres, trama)
                                 self.AX12_func(address)  # informa quin comandament s'ha executat
                                 if self.tk_app.DEBUG_Moduls:
                                     self.print_AX_MemoryMap()
@@ -370,13 +388,13 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
 
                             elif instruccio == AX_instruction.REG_WRITE.value:
                                 # tenemos que ir almacenando las acciones pendientes:
-                                ID = trama[2]
+                                self.ID = trama[2]
                                 direccion = trama[5]
                                 num_param = trama[3] - 3
                                 parametros = []
                                 for param in range(num_param):
                                     parametros.append(trama[6 + param])
-                                Lista_acciones.append([ID, direccion, num_param, parametros])
+                                Lista_acciones.append([self.ID, direccion, num_param, parametros])
                                 if self.tk_app.DEBUG_Consola == 1:
                                     print(Lista_acciones)
                             elif instruccio == AX_instruction.ACTION.value:
@@ -387,13 +405,13 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
                                     for index in range(len(Lista_acciones)):
                                         if self.tk_app.DEBUG_Consola == 1:
                                             print("Accion pendiente:", Lista_acciones[index])
-                                        ID = Lista_acciones[index][0]
+                                        self.ID = Lista_acciones[index][0]
                                         direccion = Lista_acciones[index][1]
                                         num_param = Lista_acciones[index][2]
                                         for param in range(num_param):
                                             parametro = Lista_acciones[index][3][param]
                                             # Hay que actualizar la memoria del (los) modulo(s):
-                                            self.simulador.AX12[ID][AX_registers(direccion + param)] = parametro
+                                            self.simulador.AX12[self.ID][AX_registers(direccion + param)] = parametro
                                         self.AX12_func(direccion)  # informa quin comandament s'ha executat
                                     estat_robot = self.robot_status()
                                     self.tk_app.texto_trama.set(estat_robot)

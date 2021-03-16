@@ -2,12 +2,11 @@ from tkinter import *
 from tkinter.ttk import *
 import numpy as np
 import matplotlib
+
 matplotlib.use("TkAgg")
 from matplotlib import pylab as plt
 import matplotlib.pyplot as pplt
 from matplotlib.backends.backend_tkagg import (FigureCanvasTkAgg, NavigationToolbar2Tk)
-from matplotlib.lines import Line2D
-import time
 import os.path
 from multiprocessing.connection import Listener
 
@@ -24,22 +23,23 @@ punto_anterior_y = 0
 puntos_x = []
 puntos_y = []
 
+
 def plot_habitacion(datos_habitacion):
     global ultimo_punto
     # Leemos los datos de la habitacion:
     print("Datos habitacion:", datos_habitacion)
     parametros = np.genfromtxt(datos_habitacion, dtype="int",
-                                delimiter=',', skip_header=2,
-                                max_rows=1, deletechars="\n")
+                               delimiter=',', skip_header=2,
+                               max_rows=1, deletechars="\n")
     ancho, alto = parametros[0:2]
     print("Ancho = ", ancho, " Alto = ", alto)
 
     parametros = np.genfromtxt(datos_habitacion, delimiter=',', dtype="int",
-                                   skip_header=4, max_rows=1, deletechars="\n")
+                               skip_header=4, max_rows=1, deletechars="\n")
     num_obstaculos = parametros
     print("Hay", num_obstaculos, "obstaculos.")
 
-    data = np.genfromtxt(datos_habitacion,  dtype="int",
+    data = np.genfromtxt(datos_habitacion, dtype="int",
                          delimiter=',', skip_header=6,
                          max_rows=num_obstaculos)
 
@@ -49,7 +49,7 @@ def plot_habitacion(datos_habitacion):
     altos = data[0:, 3]  # altura de cada obstaculo
     print("Obstaculos:")
     print("n: \tx \ty \tancho \talto")
-    for i in range(0, num_obstaculos-1):
+    for i in range(0, num_obstaculos - 1):
         print(i, ":", "\t", x0s[i], "\t", y0s[i], "\t", anchos[i], "\t", altos[i])
 
     # Creando la figura:
@@ -59,10 +59,10 @@ def plot_habitacion(datos_habitacion):
     left, bottom, width, height = (0, 0, ancho, alto)
     for i in range(0, num_obstaculos):
         obstaculo = pplt.Rectangle((x0s[i], y0s[i]),
-                                    anchos[i], altos[i],
-                                    facecolor="black", alpha=0.1)
+                                   anchos[i], altos[i],
+                                   facecolor="black", alpha=0.1)
         ax.add_patch(obstaculo)
-         
+
     habitacion = pplt.Rectangle((left, bottom), width, height, facecolor="green", alpha=0.1)
     ax.add_patch(habitacion)
 
@@ -116,7 +116,7 @@ def replot_movement(los_ejes):
     print(len(los_ejes.lines), "lineas para borrar")
     for i in range(len(los_ejes.lines)):
         los_ejes.lines.remove(los_ejes.lines[0])
-    print(i+1, "lineas borradas")
+    print(i + 1, "lineas borradas")
 
     # Ahora a pintar todo:
     los_ejes.plot(x, y, 'co--')
@@ -125,6 +125,7 @@ def replot_movement(los_ejes):
     texto_trama.set(total_puntos)
     canvas.draw()
     print(len(los_ejes.lines), "lineas redibujadas")
+
 
 def actualizar_plot(mensaje, los_ejes):
     global total_puntos, punto_anterior_x, punto_anterior_y
@@ -162,12 +163,13 @@ def salir():
 def fcn_boton_replot():
     replot_movement(ejes)
 
+
 figure, ejes = plot_habitacion(fichero_habitacion)
 canvas = FigureCanvasTkAgg(figure, root)
 canvas.get_tk_widget().grid(row=0, column=0, columnspan=4)
 ejes.plot(0, 0, 'k+--')  # plot algo para obligar a actualizar
 plt.ion()  # Modo "interactivo", para que se actualice automaticamente
-           # sin tener que llamar a plt.draw() o canvas.draw(), que ralentizan mucho...
+# sin tener que llamar a plt.draw() o canvas.draw(), que ralentizan mucho...
 
 toolbarFrame = Frame(master=root)
 toolbarFrame.grid(row=1, column=0)
@@ -187,7 +189,7 @@ lectura = 1
 # print(sys.stdin.readline())  # Prueba de comunicacion con el pipe
 
 # Intentamos abrir el socket para recibir datos de la aplicacion madre
-address = (SOCKET_IP, SOCKET_PORT)     # family is deduced to be 'AF_INET'
+address = (SOCKET_IP, SOCKET_PORT)  # family is deduced to be 'AF_INET'
 listener = Listener(address)
 conn = listener.accept()
 print('connection accepted from', listener.last_accepted)

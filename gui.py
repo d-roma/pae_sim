@@ -9,15 +9,8 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import messagebox
 
-import serial
-import threading
-import time
-
 from com import lista_puertos_serie, BAUD_RATES, SerialCom
-from global_config import DEFAULT_COM_PORT, DEFAULT_BAUD_RATE, SERIAL_TIMEOUT, MOTOR_ID_L, MOTOR_ID_R
-from AX import AX_registers
-
-
+from global_config import DEFAULT_COM_PORT, DEFAULT_BAUD_RATE
 
 INSTR_IDLE = 0x00
 INSTR_END = 0xFF
@@ -30,13 +23,14 @@ INSTR_Actualizar_graf = 0xBB
 class TkApplication(tk.Frame):
     def __init__(self, simulador, master=None):
         super().__init__(master)
-
-        #Custom objects
+        # Custom objects
         self.simulador = simulador
-
         self.lista_puertos = lista_puertos_serie()
 
-        #Tk objects
+        self.com_port = DEFAULT_COM_PORT
+        self.baud_rate = DEFAULT_BAUD_RATE
+
+        # Tk objects
         self.DEBUG_trama_check = IntVar()
         self.DEBUG_Moduls_check = IntVar()
         self.DEBUG_Consola_check = IntVar()
@@ -70,14 +64,9 @@ class TkApplication(tk.Frame):
 
         self.simulador.set_gui(self)
 
-        #self.crear_simul()
-        #self.check_queue()
-
         # TODO
         self.instruccio = INSTR_IDLE
-        self.simulacio = INSTR_IDLE
         self.simulando = 1
-        #self.actualizar_graf = 0
 
     @staticmethod
     def refrescar_puertos(cb_lista):
@@ -208,8 +197,8 @@ class TkApplication(tk.Frame):
         self.cb_rate.current(BAUD_RATES.index(DEFAULT_BAUD_RATE))
         self.cb_rate.grid(row=21, column=2)
         self.cb_rate.bind('<<ComboboxSelected>>', self.on_select_rate)
-        baud_rate = self.cb_rate.get()
-        print("Velocidad: ", baud_rate)
+        self.baud_rate = self.cb_rate.get()
+        print("Velocidad: ", self.baud_rate)
 
         self.refrescar = tk.Button(self, command=lambda: self.refrescar_puertos(self.cb))
         self.refrescar["text"] = "Refrescar"
@@ -226,45 +215,17 @@ class TkApplication(tk.Frame):
             return
 
     def on_select(self, event=None):
-        global lectura
-        global ser
-        global port_com
-        lectura = 0
-        seleccion = self.cb.get()
-        port_com = seleccion
-        print("Nuevo puerto seleccionado:", port_com)
-        self.H
+        self.com_port = self.cb.get()
+        print("Nuevo puerto seleccionado:", self.com_port)
         try:
-            if ser.is_open:
-                ser.close()
-            ser.port = port_com
-            ser.baudrate = baud_rate
-            ser.timeout = SERIAL_TIMEOUT
-            ser.open()
-            lectura = 1
-        except serial.SerialException:
-            mensaje_error = "No se puede abrir el puerto\n\t" + port_com
+            self.serial_com.open(self.com_port, self.baud_rate)
+        except IOError:
+            mensaje_error = "No se puede abrir el puerto\n\t" + self.com_port
             messagebox.showerror("Error COM", mensaje_error)
-            lectura = 0
 
     def on_select_rate(self, event=None):
-        global baud_rate
-        baud_rate = self.cb_rate.get()
-        ser.baudrate = baud_rate
-        print("Baud rate seleccionado: ", baud_rate, " bps")
-
-    def check_queue(self):
-        # revisar la cola para evitar bloque en la interfaz
-        if not self.cola_hilo.empty():
-            # obtener mensaje de la cola
-            self.instruccio = self.cola_hilo.get()
-            if self.DEBUG_Consola == 1:
-                print("get text from read queue:", self.instruccio)
-            # TODO: En la versio original no estava anidat, per que?
-            if self.instruccio == INSTR_STOP_THREAD:
-                self.simulador.pause()  # parar la simulacion
-                return INSTR_STOP_THREAD
-        self.master.after(100, self.check_queue)
+        self.baud_rate = self.cb_rate.get()
+        print("Baud rate seleccionado: ", self.baud_rate, " bps")
 
     def say_hi(self):
         print("J. Bosch & C. Serre,")
@@ -298,12 +259,6 @@ class TkApplication(tk.Frame):
             self.SIMUL_Save = False
 
     def crear_hilo_serial(self):
-        # crear cola para comunicar/enviar tareas al thread
-        #self.cola = queue.Queue()
-        #self.cola_hilo = queue.Queue()
-        #if self.DEBUG_Consola == 1:
-        #    print(self.cola, self.cola_hilo)
-        # crear el thread
         self.serial_com = SerialCom(self, self.simulador)
         # iniciar thread
         self.serial_com.start()
@@ -318,12 +273,8 @@ class TkApplication(tk.Frame):
         self.simulador.reset_plot()
 
     def salir(self):
-        #self.cola.put(INSTR_END)  # terminar funcion leer_puerto
-        if (self.instruccio == INSTR_STOP_THREAD):
-            self.simulador.close()
-             # Cerramos la ventana del plot
-            if self.DEBUG_Consola == 1:
-                print("Hilos finalizados")
-            self.master.destroy()  # Termina la aplicacion
-        else:
-            self.master.after(200, self.salir)
+        self.simulador.close()
+        # Cerramos la ventana del plot
+        if self.DEBUG_Consola == 1:
+            print("Hilos finalizados")
+        self.master.destroy()  # Termina la aplicacion

@@ -33,6 +33,8 @@ class Simulator(threading.Thread):
                  motor_id_l=MOTOR_ID_L, motor_id_r=MOTOR_ID_R, sensor_id=SENSOR_ID,
                  ):
 
+        threading.Thread.__init__(self)
+
         # Starting logger
         self.logger = logging.getLogger('pae.sim.Sim')
 
@@ -70,10 +72,10 @@ class Simulator(threading.Thread):
         self.AXS1 = AX(self.sensor_id)
 
         # Initial demo values
-        #self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] = V_inicial_demo_L & 0xFF
-        #self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_L >> 8) & 0x07
-        #self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] = V_inicial_demo_R & 0xFF
-        #self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_R >> 8) & 0x07
+        # self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] = V_inicial_demo_L & 0xFF
+        # self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_L >> 8) & 0x07
+        # self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] = V_inicial_demo_R & 0xFF
+        # self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_R >> 8) & 0x07
 
         # Registering later the gui to update sensor bars
         self.gui = None
@@ -100,7 +102,9 @@ class Simulator(threading.Thread):
         self.icc_x = self.icc_y = 0.0
 
         # Last time updated simulation values
-        self.t_last_upd = 0
+        self.t_last_upd = time.time()
+
+        self.objective_delay = self.DELTA_T
 
         self.running = 1
 
@@ -344,10 +348,11 @@ class Simulator(threading.Thread):
         :return:
         """
         # while True
-        objective_delay = SIM_STEP_MS_TIME
-        elapsed, true_elapsed_time = self.elapsed_time(objective_delay)
+
+        elapsed, true_elapsed_time = self.elapsed_time(self.objective_delay)
         if elapsed and self.running:
-            objective_delay -= (true_elapsed_time - SIM_STEP_MS_TIME)
+            if self.sim_step > 1:
+                self.objective_delay = self.DELTA_T - 1e-3 * (true_elapsed_time - SIM_STEP_MS_TIME)
             self.t_last_upd = time.time()
             self.sim_step += 1
             if MAX_SIM_STEPS != 0 and self.sim_step >= MAX_SIM_STEPS:
@@ -369,7 +374,12 @@ class Simulator(threading.Thread):
                                                                        self.v_r))
 
     def run(self):
-        self.update_movement_simulator_values()
+        while True:
+            self.update_movement_simulator_values()
+            if self.objective_delay < 0:
+                self.logger.error("Required delay is negative (%g), simulation is too slow!" % self.objective_delay)
+                self.objective_delay = self.DELTA_T
+            time.sleep(self.objective_delay)
 
 
 if __name__ == "__main__":
