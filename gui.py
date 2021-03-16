@@ -10,18 +10,14 @@ from tkinter import ttk
 from tkinter import messagebox
 
 import serial
-import queue
 import threading
 import time
 
-from com import lista_puertos_serie, BAUD_RATES, Hilo
+from com import lista_puertos_serie, BAUD_RATES, SerialCom
 from global_config import DEFAULT_COM_PORT, DEFAULT_BAUD_RATE, SERIAL_TIMEOUT, MOTOR_ID_L, MOTOR_ID_R
 from AX import AX_registers
 
-# V_inicial_demo_L = 0x3FF
-# V_inicial_demo_R = 0x7FF
-V_inicial_demo_L = 0
-V_inicial_demo_R = 0
+
 
 INSTR_IDLE = 0x00
 INSTR_END = 0xFF
@@ -37,7 +33,6 @@ class TkApplication(tk.Frame):
 
         #Custom objects
         self.simulador = simulador
-        self.contador = 0
 
         self.lista_puertos = lista_puertos_serie()
 
@@ -66,22 +61,26 @@ class TkApplication(tk.Frame):
         self.Led_motor_right = IntVar()
         self.estados = {0: "OFF", 1: "ON "}
 
+        self.serial_com = None
+        self.crear_hilo_serial()
 
         self.master = master
         self.grid()
         self.create_widgets()
-        self.crear_hilo()
-        self.crear_simul()
-        self.check_queue()
+
+        self.simulador.set_gui(self)
+
+        #self.crear_simul()
+        #self.check_queue()
 
         # TODO
         self.instruccio = INSTR_IDLE
         self.simulacio = INSTR_IDLE
-        self.simulando = 0
+        self.simulando = 1
         #self.actualizar_graf = 0
 
+    @staticmethod
     def refrescar_puertos(cb_lista):
-        global port_com
         print("Actualizando lista puertos")
         lista_puertos = lista_puertos_serie()
         cb_lista.config(values=lista_puertos)
@@ -234,6 +233,7 @@ class TkApplication(tk.Frame):
         seleccion = self.cb.get()
         port_com = seleccion
         print("Nuevo puerto seleccionado:", port_com)
+        self.H
         try:
             if ser.is_open:
                 ser.close()
@@ -262,8 +262,7 @@ class TkApplication(tk.Frame):
                 print("get text from read queue:", self.instruccio)
             # TODO: En la versio original no estava anidat, per que?
             if self.instruccio == INSTR_STOP_THREAD:
-                self.simulador.stop()  # parar la simulacion
-                simulacio = INSTR_STOP_SIMUL  # terminar el hilo de la simulacion
+                self.simulador.pause()  # parar la simulacion
                 return INSTR_STOP_THREAD
         self.master.after(100, self.check_queue)
 
@@ -283,8 +282,11 @@ class TkApplication(tk.Frame):
 
     def set_Simul_On_Off(self):
         self.SIMUL_On_Off = self.SIMUL_check.get()
-        # TODO que hace simulando
         self.simulando = self.SIMUL_On_Off
+        if self.simulando:
+            self.simulador.resume()
+        else:
+            self.simulador.pause()
         print("Simulacion ", self.estados[self.SIMUL_On_Off])
 
     def grabar_Simul_OnOff(self):
@@ -295,36 +297,16 @@ class TkApplication(tk.Frame):
             self.simulador.disable_data_logging()
             self.SIMUL_Save = False
 
-    def crear_hilo(self):
+    def crear_hilo_serial(self):
         # crear cola para comunicar/enviar tareas al thread
-        self.cola = queue.Queue()
-        self.cola_hilo = queue.Queue()
-        if self.DEBUG_Consola == 1:
-            print(self.cola, self.cola_hilo)
+        #self.cola = queue.Queue()
+        #self.cola_hilo = queue.Queue()
+        #if self.DEBUG_Consola == 1:
+        #    print(self.cola, self.cola_hilo)
         # crear el thread
-        hilo = Hilo("puerto", self.cola, self.cola_hilo, self)
+        self.serial_com = SerialCom(self, self.simulador)
         # iniciar thread
-        hilo.start()
-
-    def crear_simul(self):
-        # crear cola para comunicar/enviar tareas al thread
-        self.cola_simul = queue.Queue()
-        if self.DEBUG_Consola == 1:
-            print(self.cola, self.cola_simul)
-        # crear el thread
-        simul = Simul("Simul", self.cola, self.cola_simul, self, self.simulador)
-        self.simulador.update_sensor_data()
-        print("Robot @:", self.simulador.x, self.simulador.y)
-        print("Distancia: Izq.=", self.simulador.AXS1[AX_registers.IR_LEFT], ", Centro =",
-              self.simulador.AXS1[AX_registers.IR_CENTER], ", Der. =",
-              self.simulador.AXS1[AX_registers.IR_RIGHT])
-        # Actualizamos las barras graficas:
-        self.valor_barra_izq.set(self.simulador.AXS1[AX_registers.IR_LEFT])
-        self.valor_barra_der.set(self.simulador.AXS1[AX_registers.IR_RIGHT])
-        self.valor_barra_cent.set(self.simulador.AXS1[AX_registers.IR_CENTER])
-
-        # iniciar thread
-        simul.start()
+        self.serial_com.start()
 
     def reset_simul(self):
         print("Simulacio reiniciada")
@@ -332,16 +314,12 @@ class TkApplication(tk.Frame):
         self.set_Simul_On_Off()
         # reiniciar el robot_pos
         # reiniciar el contador de simulacion
-        self.contador = 0
-        # Actualizamos las barras graficas:
-        self.valor_barra_izq.set(self.simulador.AX12[0][AX_registers.IR_LEFT])
-        self.valor_barra_der.set(self.simulador.AX12[0][AX_registers.IR_RIGHT])
-        self.valor_barra_cent.set(self.simulador.AX12[0][AX_registers.IR_CENTER])
+        self.simulador.reset_robot()
         self.simulador.reset_plot()
 
     def salir(self):
-        self.cola.put(INSTR_END)  # terminar funcion leer_puerto
-        if (self.instruccio == INSTR_STOP_THREAD) & (simulacio == INSTR_SIMUL_ENDED):
+        #self.cola.put(INSTR_END)  # terminar funcion leer_puerto
+        if (self.instruccio == INSTR_STOP_THREAD):
             self.simulador.close()
              # Cerramos la ventana del plot
             if self.DEBUG_Consola == 1:
@@ -349,44 +327,3 @@ class TkApplication(tk.Frame):
             self.master.destroy()  # Termina la aplicacion
         else:
             self.master.after(200, self.salir)
-
-
-class Simul(threading.Thread):
-    delay_Simul = 0.090  # en s
-
-    def __init__(self, nombre, cola, cola_simul, tkapp, simulador):
-        threading.Thread.__init__(self)
-        self.cola = cola
-        self.cola_simul = cola_simul
-        self.tkapp = tkapp
-        self.simulador = simulador
-
-    def movement(self,):
-        # TODO
-        global simulacio
-        print("Hilo simulacion movimiento iniciado, simulación en pausa...")
-        # Pondremos una velocidad inicial, para las pruebas y/o la demo:
-        self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] = V_inicial_demo_L & 0xFF
-        self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_L >> 8) & 0x07
-        self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] = V_inicial_demo_R & 0xFF
-        self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_R >> 8) & 0x07
-        while simulacio != INSTR_STOP_SIMUL:
-            if self.simulador.running == 1:
-                if self.simulador.update_movement_simulator_values():
-                    # Actualizamos las barras graficas:
-                    self.tkapp.valor_barra_izq.set(self.simulador.AXS1[AX_registers.IR_LEFT])
-                    self.tkapp.valor_barra_der.set(self.simulador.AXS1[AX_registers.IR_RIGHT])
-                    self.tkapp.valor_barra_cent.set(self.simulador.AXS1[AX_registers.IR_CENTER])
-                # else:
-                # en principio, no hacer nada?...
-            time.sleep(Simul.delay_Simul)  # para dejar tiempo de procesador al hilo principal
-        self.cola_simul.put(INSTR_STOP_SIMUL)
-        if self.tkapp.DEBUG_Consola == 1:
-            print("simulacion parada")
-        self.simulador.stop()
-        simulacio = INSTR_SIMUL_ENDED
-
-    def run(self):
-        self.movement()
-        if self.tkapp.DEBUG_Consola == 1:
-            print("funcion run terminada")

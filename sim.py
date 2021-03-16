@@ -7,18 +7,19 @@ PAE Simulator Core
 import math
 import time
 import logging
+import threading
 from multiprocessing.connection import Client
 
 from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID, OUTPUT_FILE_NAME, INITIAL_POS_X, INITIAL_POS_Y, \
     INITIAL_POS_THETA, WORLD__N_BITS, WORLD__MAX_2POW, SOCKET_IP, SOCKET_PORT, SIM_STEP_MS_TIME, MAX_SIM_STEPS
 
 from AX import AX, AX_registers
-
+from global_config import V_inicial_demo_L, V_inicial_demo_R
 
 module_logger = logging.getLogger('PAE.sim')
 
 
-class Simulator(object):
+class Simulator(threading.Thread):
     DELTA_T = SIM_STEP_MS_TIME / 1000.0  # convertimos el paso de la simul a s
     CNTS_2_MM = 1000.0 * DELTA_T / 1023  # conversion del valor de velocidad del AX12 [0..3FF] a mm/s
     L_AXIS = 1.0
@@ -68,6 +69,15 @@ class Simulator(object):
         # AXS1 sensor modules
         self.AXS1 = AX(self.sensor_id)
 
+        # Initial demo values
+        #self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] = V_inicial_demo_L & 0xFF
+        #self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_L >> 8) & 0x07
+        #self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] = V_inicial_demo_R & 0xFF
+        #self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_R >> 8) & 0x07
+
+        # Registering later the gui to update sensor bars
+        self.gui = None
+
         # Not required, only declaring in init
         # Position integer
         self.x = self.y = 0
@@ -96,8 +106,11 @@ class Simulator(object):
 
         self.reset_robot()
 
-    def stop(self):
+    def pause(self):
         self.running = 0
+
+    def resume(self):
+        self.running = 1
 
     def enable_data_logging(self):
         self.log = open(OUTPUT_FILE_NAME, 'a')
@@ -192,6 +205,9 @@ class Simulator(object):
             u8_mod = round(modulo)
 
         return u8_mod
+
+    def set_gui(self, tk_app):
+        self.gui = tk_app
 
     def distance(self):
         # Parametros: _robot_pos_t *robot_pos, uint8_t *izq, uint8_t *centro, uint8_t *der
@@ -317,6 +333,11 @@ class Simulator(object):
         self.AXS1[AX_registers.IR_CENTER] = self.distance_center  # Center IR
         self.AXS1[AX_registers.IR_RIGHT] = self.distance_right  # Right IR
 
+        if self.gui is not None:
+            self.gui.valor_barra_izq.set(self.AXS1[AX_registers.IR_LEFT])
+            self.gui.valor_barra_der.set(self.AXS1[AX_registers.IR_RIGHT])
+            self.gui.valor_barra_cent.set(self.AXS1[AX_registers.IR_CENTER])
+
     def update_movement_simulator_values(self):
         """ Update, if required, the position and sensor information
 
@@ -325,19 +346,20 @@ class Simulator(object):
         # while True
         objective_delay = SIM_STEP_MS_TIME
         elapsed, true_elapsed_time = self.elapsed_time(objective_delay)
-        if elapsed:
+        if elapsed and self.running:
             objective_delay -= (true_elapsed_time - SIM_STEP_MS_TIME)
             self.t_last_upd = time.time()
             self.sim_step += 1
             if MAX_SIM_STEPS != 0 and self.sim_step >= MAX_SIM_STEPS:
                 self.logger.warning("***** SIMULATION END REACHED. STOPPING SIMULATOR\n")
                 self.running = 0
-                return False  # False pq ya no conviene actualizar nada desde el hilo
+                return False
             self.calculate_new_position()
             if not self.check_out_of_bounds():
                 self.update_sensor_data()
                 if self.check_colision():
-                    return False  # False pq no conviene actualizar nada desde el hilo
+                    self.running = 0
+                    return False
                 # Mandamos las nuevas coordenadas al socket de la ventana grafica:
                 self.send_2_plot("%.2f, %.2f\n" % (self.x_p, self.y_p))
                 # Si esta activada la grabacion, escribimos los datos al fichero de salida:
@@ -345,6 +367,9 @@ class Simulator(object):
                     self.log.write("%.2f, %.2f, %.3f, %.2f, %.2f\n" % (self.x_p, self.y_p,
                                                                        self.theta, self.v_l,
                                                                        self.v_r))
+
+    def run(self):
+        self.update_movement_simulator_values()
 
 
 if __name__ == "__main__":
