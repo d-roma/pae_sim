@@ -9,8 +9,15 @@ from tkinter import *
 from tkinter import ttk
 from tkinter import messagebox
 
+import logging
+
+module_logger = logging.getLogger(__name__)
+
 from com import lista_puertos_serie, BAUD_RATES, SerialCom
-from global_config import DEFAULT_COM_PORT, DEFAULT_BAUD_RATE
+from global_config import DEFAULT_COM_PORT, DEFAULT_BAUD_RATE, MOTOR_ID_R, MOTOR_ID_L
+from AX import AX_registers
+
+import time
 
 INSTR_IDLE = 0x00
 INSTR_END = 0xFF
@@ -21,14 +28,19 @@ INSTR_Actualizar_graf = 0xBB
 
 
 class TkApplication(tk.Frame):
-    def __init__(self, simulador, master=None):
-        super().__init__(master)
+    def __init__(self, simulador, AX12, AXS1, root=None):
+        super().__init__(root)
         # Custom objects
+        self.AX12 = AX12
+        self.AXS1 = AXS1
+
         self.simulador = simulador
         self.lista_puertos = lista_puertos_serie()
 
         self.com_port = DEFAULT_COM_PORT
         self.baud_rate = DEFAULT_BAUD_RATE
+
+        self.logger = logging.getLogger('pae.gui.TkApp')
 
         # Tk objects
         self.DEBUG_trama_check = IntVar()
@@ -58,15 +70,17 @@ class TkApplication(tk.Frame):
         self.serial_com = None
         self.crear_hilo_serial()
 
-        self.master = master
+        self.root = root
         self.grid()
         self.create_widgets()
 
         self.simulador.set_gui(self)
+        self.estat_robot = "Robot Parat"
+        self.AX12_moving_l = "PARAT"
+        self.AX12_moving_r = "PARAT"
 
-        # TODO
-        self.instruccio = INSTR_IDLE
         self.simulando = 1
+        self.exit = False
 
     @staticmethod
     def refrescar_puertos(cb_lista):
@@ -198,7 +212,12 @@ class TkApplication(tk.Frame):
         self.cb_rate.grid(row=21, column=2)
         self.cb_rate.bind('<<ComboboxSelected>>', self.on_select_rate)
         self.baud_rate = self.cb_rate.get()
-        print("Velocidad: ", self.baud_rate)
+        self.logger.debug("Velocidad: " + str(self.baud_rate))
+
+        try:
+            self.serial_com.open(self.com_port, self.baud_rate)
+        except IOError:
+            pass
 
         self.refrescar = tk.Button(self, command=lambda: self.refrescar_puertos(self.cb))
         self.refrescar["text"] = "Refrescar"
@@ -216,7 +235,7 @@ class TkApplication(tk.Frame):
 
     def on_select(self, event=None):
         self.com_port = self.cb.get()
-        print("Nuevo puerto seleccionado:", self.com_port)
+        self.logger.debug("Nuevo puerto seleccionado: " + str(self.com_port))
         try:
             self.serial_com.open(self.com_port, self.baud_rate)
         except IOError:
@@ -225,7 +244,7 @@ class TkApplication(tk.Frame):
 
     def on_select_rate(self, event=None):
         self.baud_rate = self.cb_rate.get()
-        print("Baud rate seleccionado: ", self.baud_rate, " bps")
+        self.logger.debug("Baud rate seleccionado: " + str(self.baud_rate) + " bps")
 
     def say_hi(self):
         print("J. Bosch & C. Serre,")
@@ -248,7 +267,7 @@ class TkApplication(tk.Frame):
             self.simulador.resume()
         else:
             self.simulador.pause()
-        print("Simulacion ", self.estados[self.SIMUL_On_Off])
+        self.logger.debug("Simulacion " + str(self.estados[self.SIMUL_On_Off]))
 
     def grabar_Simul_OnOff(self):
         if self.SIMUL_Save_check.get():
@@ -259,12 +278,12 @@ class TkApplication(tk.Frame):
             self.SIMUL_Save = False
 
     def crear_hilo_serial(self):
-        self.serial_com = SerialCom(self, self.simulador)
+        self.serial_com = SerialCom(self, self.AX12, self.AXS1)
         # iniciar thread
         self.serial_com.start()
 
     def reset_simul(self):
-        print("Simulacio reiniciada")
+        self.logger.info("Simulacio reiniciada")
         self.SIMUL_check.set(0)
         self.set_Simul_On_Off()
         # reiniciar el robot_pos
@@ -273,8 +292,31 @@ class TkApplication(tk.Frame):
         self.simulador.reset_plot()
 
     def salir(self):
+        self.exit = True
         self.simulador.close()
+        self.serial_com.close()
         # Cerramos la ventana del plot
         if self.DEBUG_Consola == 1:
-            print("Hilos finalizados")
-        self.master.destroy()  # Termina la aplicacion
+            self.logger.debug("Hilos finalizados")
+        self.root.destroy()  # Termina la aplicacion
+
+    def set_estat_robot(self, estat_robot, AX12_moving_l, AX12_moving_r):
+        self.estat_robot = estat_robot
+        self.AX12_moving_l = AX12_moving_l
+        self.AX12_moving_r = AX12_moving_r
+
+    def mainloop(self):
+        'The main loop for the application - call this after initialization.  Returns on exit.'
+        while True:
+            if self.exit:
+                break
+            running, delay = self.simulador.update_movement_simulator_values()
+            if running:
+                time.sleep(delay)
+                # self.logger.debug(delay)
+            self.root.update()
+            self.Led_motor_left.set(self.AX12[MOTOR_ID_L][AX_registers.LED])
+            self.Led_motor_right.set(self.AX12[MOTOR_ID_R][AX_registers.LED])
+            self.texto_trama.set(self.estat_robot)
+            self.texto_motor_left.set(self.AX12_moving_l)
+            self.texto_motor_right.set(self.AX12_moving_r)

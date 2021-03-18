@@ -24,20 +24,23 @@ puntos_x = []
 puntos_y = []
 
 
-def plot_habitacion(datos_habitacion):
+def plot_habitacion(datos_habitacion, debug=False):
     global ultimo_punto
     # Leemos los datos de la habitacion:
-    print("Datos habitacion:", datos_habitacion)
+    if debug:
+        print("Datos habitacion:", datos_habitacion)
     parametros = np.genfromtxt(datos_habitacion, dtype="int",
                                delimiter=',', skip_header=2,
                                max_rows=1, deletechars="\n")
     ancho, alto = parametros[0:2]
-    print("Ancho = ", ancho, " Alto = ", alto)
+    if debug:
+        print("Ancho = ", ancho, " Alto = ", alto)
 
     parametros = np.genfromtxt(datos_habitacion, delimiter=',', dtype="int",
                                skip_header=4, max_rows=1, deletechars="\n")
     num_obstaculos = parametros
-    print("Hay", num_obstaculos, "obstaculos.")
+    if debug:
+        print("Hay", num_obstaculos, "obstaculos.")
 
     data = np.genfromtxt(datos_habitacion, dtype="int",
                          delimiter=',', skip_header=6,
@@ -47,10 +50,11 @@ def plot_habitacion(datos_habitacion):
     y0s = data[0:, 1]  # coordenada y de la esquina izq. inferior de cada obstaculo
     anchos = data[0:, 2]  # anchura de cada obstaculo
     altos = data[0:, 3]  # altura de cada obstaculo
-    print("Obstaculos:")
-    print("n: \tx \ty \tancho \talto")
-    for i in range(0, num_obstaculos - 1):
-        print(i, ":", "\t", x0s[i], "\t", y0s[i], "\t", anchos[i], "\t", altos[i])
+    if debug:
+        print("Obstaculos:")
+        print("n: \tx \ty \tancho \talto")
+        for i in range(0, num_obstaculos - 1):
+            print(i, ":", "\t", x0s[i], "\t", y0s[i], "\t", anchos[i], "\t", altos[i])
 
     # Creando la figura:
     fig, ax = plt.subplots(figsize=[9, 6])
@@ -193,7 +197,7 @@ address = (SOCKET_IP, SOCKET_PORT)  # family is deduced to be 'AF_INET'
 listener = Listener(address)
 conn = listener.accept()
 print('connection accepted from', listener.last_accepted)
-print(conn.recv())
+#print(conn.recv())
 
 # Bucle principal
 while seguir:
@@ -201,7 +205,7 @@ while seguir:
     if conn.poll(0.001):
         msg = conn.recv()
         if msg == 'close':
-            print("terminando aplicacion grafica")
+            print("Terminando aplicacion grafica")
             conn.close()
             seguir = 0
         elif msg == 'reset':

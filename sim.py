@@ -7,8 +7,9 @@ PAE Simulator Core
 import math
 import time
 import logging
-import threading
 from multiprocessing.connection import Client
+
+module_logger = logging.getLogger(__name__)
 
 from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID, OUTPUT_FILE_NAME, INITIAL_POS_X, INITIAL_POS_Y, \
     INITIAL_POS_THETA, WORLD__N_BITS, WORLD__MAX_2POW, SOCKET_IP, SOCKET_PORT, SIM_STEP_MS_TIME, MAX_SIM_STEPS
@@ -16,24 +17,27 @@ from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID, OUTPUT_FILE_NAME, I
 from AX import AX, AX_registers
 from global_config import V_inicial_demo_L, V_inicial_demo_R
 
-module_logger = logging.getLogger('PAE.sim')
 
-
-class Simulator(threading.Thread):
+class Simulator(object):
     DELTA_T = SIM_STEP_MS_TIME / 1000.0  # convertimos el paso de la simul a s
     CNTS_2_MM = 1000.0 * DELTA_T / 1023  # conversion del valor de velocidad del AX12 [0..3FF] a mm/s
     L_AXIS = 1.0
     ORIENT_L = 1  # Orientacion motor izquierdo
     ORIENT_R = -1  # Orientacion motor derecho
 
-    def __init__(self, mundo,
+    def __init__(self, mundo, AX12, AXS1,
                  initial_pos_x=INITIAL_POS_X, initial_pos_y=INITIAL_POS_Y, initial_theta=INITIAL_POS_THETA,
                  socket_ip=SOCKET_IP, socket_port=SOCKET_PORT, start_conn=True,
                  log_data=True,
                  motor_id_l=MOTOR_ID_L, motor_id_r=MOTOR_ID_R, sensor_id=SENSOR_ID,
                  ):
 
-        threading.Thread.__init__(self)
+        # threading.Thread.__init__(self)
+
+        # Motors
+        self.AX12 = AX12
+        # Sensors
+        self.AXS1 = AXS1
 
         # Starting logger
         self.logger = logging.getLogger('pae.sim.Sim')
@@ -64,12 +68,6 @@ class Simulator(threading.Thread):
         self.motor_id_l = motor_id_l
         self.motor_id_r = motor_id_r
         self.sensor_id = sensor_id
-
-        # AX12 motors, left and right
-        self.AX12 = {self.motor_id_l: AX(self.motor_id_l),
-                     self.motor_id_r: AX(self.motor_id_r), }
-        # AXS1 sensor modules
-        self.AXS1 = AX(self.sensor_id)
 
         # Initial demo values
         # self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] = V_inicial_demo_L & 0xFF
@@ -352,19 +350,24 @@ class Simulator(threading.Thread):
         elapsed, true_elapsed_time = self.elapsed_time(self.objective_delay)
         if elapsed and self.running:
             if self.sim_step > 1:
-                self.objective_delay = self.DELTA_T - 1e-3 * (true_elapsed_time - SIM_STEP_MS_TIME)
+                # self.objective_delay = self.DELTA_T - 1e-3 * (true_elapsed_time - SIM_STEP_MS_TIME)
+                self.objective_delay = self.DELTA_T
+                if true_elapsed_time * 1e-3 > self.DELTA_T * 1.1:
+                    # self.logger.error("Required delay is negative (%g), simulation is too slow!" % self.objective_delay)
+                    self.logger.error("Simulation too slow, elapsed time was %g" % (true_elapsed_time * 1e-3))
+                    self.objective_delay = self.DELTA_T
             self.t_last_upd = time.time()
             self.sim_step += 1
             if MAX_SIM_STEPS != 0 and self.sim_step >= MAX_SIM_STEPS:
                 self.logger.warning("***** SIMULATION END REACHED. STOPPING SIMULATOR\n")
                 self.running = 0
-                return False
+                return False, 0
             self.calculate_new_position()
             if not self.check_out_of_bounds():
                 self.update_sensor_data()
                 if self.check_colision():
                     self.running = 0
-                    return False
+                    return False, 0
                 # Mandamos las nuevas coordenadas al socket de la ventana grafica:
                 self.send_2_plot("%.2f, %.2f\n" % (self.x_p, self.y_p))
                 # Si esta activada la grabacion, escribimos los datos al fichero de salida:
@@ -372,13 +375,11 @@ class Simulator(threading.Thread):
                     self.log.write("%.2f, %.2f, %.3f, %.2f, %.2f\n" % (self.x_p, self.y_p,
                                                                        self.theta, self.v_l,
                                                                        self.v_r))
+        return True, self.objective_delay
 
     def run(self):
         while True:
             self.update_movement_simulator_values()
-            if self.objective_delay < 0:
-                self.logger.error("Required delay is negative (%g), simulation is too slow!" % self.objective_delay)
-                self.objective_delay = self.DELTA_T
             time.sleep(self.objective_delay)
 
 

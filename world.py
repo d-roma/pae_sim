@@ -9,7 +9,7 @@ import numpy as np
 
 from global_config import WORLD__MAX_2POW
 
-module_logger = logging.getLogger('PAE.world')
+module_logger = logging.getLogger(__name__)
 
 
 class World(object):
@@ -43,7 +43,7 @@ class World(object):
         self.logger.debug("Obstaculos:")
         self.logger.debug("n: \tx \ty \tancho \talto")
         for i in range(0, num_obstaculos - 1):
-            self.logger.debug("%d:\t %d\t %d\t %d\t %d\t\n" % (i, self.obstaculos_x0s[i], self.obstaculos_y0s[i],
+            self.logger.debug("%d:\t %d\t %d\t %d\t %d\t" % (i, self.obstaculos_x0s[i], self.obstaculos_y0s[i],
                                                                self.obstaculos_anchos[i], self.obstaculos_altos[i]))
         x_len = (self.ancho >> WORLD__MAX_2POW)
         self.datos = np.genfromtxt(fichero_habitacion, delimiter=',', dtype="int",

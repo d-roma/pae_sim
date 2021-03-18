@@ -21,7 +21,7 @@ INITIAL_POS_Y = 350
 INITIAL_POS_THETA = math.pi / 2
 
 # Simulator update parameters
-SIM_STEP_MS_TIME = 250  # en ms
+SIM_STEP_MS_TIME = 200  # en ms
 MAX_SIM_STEPS = 24000
 
 # Socket to graphical app
@@ -33,7 +33,7 @@ OUTPUT_FILE_NAME = "movement.log"
 
 Comando_plot = "python plot_movement.py"
 
-DEFAULT_COM_PORT = 'COM5'
+DEFAULT_COM_PORT = 'COM7'
 DEFAULT_BAUD_RATE = 115200
 # SERIAL_TIMEOUT = 0.002  # para lectura puerto, en s
 SERIAL_TIMEOUT = 0  # para lectura puerto, en s
