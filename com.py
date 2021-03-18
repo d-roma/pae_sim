@@ -321,7 +321,7 @@ class SerialCom(threading.Thread):  # El thread que ira leyendo del puerto serie
         v_right = self.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] + (
                 self.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] & 0x03) << 8
         sentit_right = self.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] & 0x04
-        if (v_left == 0) & (v_right == 0):
+        if (v_left == 0) and (v_right == 0):
             if self.tk_app.DEBUG_Consola == 1:
                 self.logger.info("Robot Parat")
             estat_robot = "Robot Parat"
