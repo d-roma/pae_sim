@@ -35,10 +35,9 @@ Comando_plot = "python plot_movement.py"
 
 DEFAULT_COM_PORT = 'COM7'
 DEFAULT_BAUD_RATE = 115200
-# SERIAL_TIMEOUT = 0.002  # para lectura puerto, en s
 SERIAL_TIMEOUT = 0  # para lectura puerto, en s
 
-# V_inicial_demo_L = 0x3FF
-# V_inicial_demo_R = 0x7FF
+#V_inicial_demo_L = 0x3FF
+#V_inicial_demo_R = 0x7FF
 V_inicial_demo_L = 0
 V_inicial_demo_R = 0

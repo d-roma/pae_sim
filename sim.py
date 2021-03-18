@@ -14,13 +14,12 @@ module_logger = logging.getLogger(__name__)
 from global_config import MOTOR_ID_L, MOTOR_ID_R, SENSOR_ID, OUTPUT_FILE_NAME, INITIAL_POS_X, INITIAL_POS_Y, \
     INITIAL_POS_THETA, WORLD__N_BITS, WORLD__MAX_2POW, SOCKET_IP, SOCKET_PORT, SIM_STEP_MS_TIME, MAX_SIM_STEPS
 
-from AX import AX, AX_registers
-from global_config import V_inicial_demo_L, V_inicial_demo_R
+from AX import AX_registers
 
 
 class Simulator(object):
     DELTA_T = SIM_STEP_MS_TIME / 1000.0  # convertimos el paso de la simul a s
-    CNTS_2_MM = 1000.0 * DELTA_T / 1023  # conversion del valor de velocidad del AX12 [0..3FF] a mm/s
+    CNTS_2_MM = 200.0 * DELTA_T / 1023  # conversion del valor de velocidad del AX12 [0..3FF] a mm/s
     L_AXIS = 1.0
     ORIENT_L = 1  # Orientacion motor izquierdo
     ORIENT_R = -1  # Orientacion motor derecho
@@ -68,12 +67,6 @@ class Simulator(object):
         self.motor_id_l = motor_id_l
         self.motor_id_r = motor_id_r
         self.sensor_id = sensor_id
-
-        # Initial demo values
-        # self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_L] = V_inicial_demo_L & 0xFF
-        # self.simulador.AX12[MOTOR_ID_L][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_L >> 8) & 0x07
-        # self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_L] = V_inicial_demo_R & 0xFF
-        # self.simulador.AX12[MOTOR_ID_R][AX_registers.GOAL_SPEED_H] = (V_inicial_demo_R >> 8) & 0x07
 
         # Registering later the gui to update sensor bars
         self.gui = None

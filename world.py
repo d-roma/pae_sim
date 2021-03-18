@@ -44,7 +44,7 @@ class World(object):
         self.logger.debug("n: \tx \ty \tancho \talto")
         for i in range(0, num_obstaculos - 1):
             self.logger.debug("%d:\t %d\t %d\t %d\t %d\t" % (i, self.obstaculos_x0s[i], self.obstaculos_y0s[i],
-                                                               self.obstaculos_anchos[i], self.obstaculos_altos[i]))
+                                                             self.obstaculos_anchos[i], self.obstaculos_altos[i]))
         x_len = (self.ancho >> WORLD__MAX_2POW)
         self.datos = np.genfromtxt(fichero_habitacion, delimiter=',', dtype="int",
                                    skip_header=13 + num_obstaculos, skip_footer=1, deletechars="\n",
